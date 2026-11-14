@@ -5,6 +5,7 @@ struct StatisticsView: View {
     let onReset: () -> Void
     @State private var animateBars = false
     @State private var showResetConfirmation = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var completedCount: Int { games.filter { $0.status == .completed }.count }
     private var totalHours: Int { games.reduce(0) { $0 + ($1.playHours ?? 0) } }
@@ -18,53 +19,35 @@ struct StatisticsView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 145), spacing: 12)], spacing: 12) {
-                        statCard("遊戲總數", value: "\(games.count)", icon: "gamecontroller.fill", tint: .indigo)
-                        statCard("已通關", value: "\(completedCount)", icon: "checkmark.seal.fill", tint: .green)
-                        statCard("遊玩時數", value: "\(totalHours) h", icon: "clock.fill", tint: .orange)
-                        statCard("平均評分", value: String(format: "%.1f / 5", averageRating), icon: "star.fill", tint: .yellow)
-                    }
-                    VStack(alignment: .leading, spacing: 20) {
-                        Text("遊玩狀態分布")
-                            .font(.title2.bold())
-                        ForEach(GameStatus.allCases) { status in
-                            let count = games.filter { $0.status == status }.count
-                            VStack(alignment: .leading, spacing: 7) {
-                                HStack {
-                                    Label(status.rawValue, systemImage: status.systemImage)
-                                    Spacer()
-                                    Text("\(count) / \(games.count)")
-                                        .foregroundStyle(.secondary)
-                                }
-                                GeometryReader { geo in
-                                    Capsule()
-                                        .fill(Color.secondary.opacity(0.13))
-                                        .overlay(alignment: .leading) {
-                                            Capsule()
-                                                .fill(barColor(for: status).gradient)
-                                                .frame(width: animateBars && !games.isEmpty
-                                                       ? geo.size.width * CGFloat(count) / CGFloat(games.count)
-                                                       : 0)
-                                        }
-                                }
-                                .frame(height: 12)
-                            }
-                        }
-                    }
-                    .padding(18)
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
-                    Text("未設定狀態的遊戲不列入分類，所有數據會即時更新。")
+                    StatisticsSummaryGrid(
+                        gameCount: games.count,
+                        completedCount: completedCount,
+                        totalHours: totalHours,
+                        averageRating: averageRating
+                    )
+
+                    StatusDistributionCard(games: games, animateBars: animateBars)
+
+                    Label("未設定狀態的遊戲不會列入分類！", systemImage: "info.circle")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 .padding()
-                .frame(maxWidth: 860)
+                .frame(maxWidth: 900)
                 .frame(maxWidth: .infinity)
             }
+            .background(Color(.systemGroupedBackground))
+            .safeAreaPadding(.bottom, 96)
             .navigationTitle("遊戲統計")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("清除玩家紀錄") { showResetConfirmation = true }
+                    Menu {
+                        Button("清除玩家紀錄", role: .destructive) {
+                            showResetConfirmation = true
+                        }
+                    } label: {
+                        Label("更多", systemImage: "ellipsis.circle")
+                    }
                 }
             }
             .confirmationDialog("要清除所有玩家紀錄嗎？", isPresented: $showResetConfirmation) {
@@ -75,24 +58,50 @@ struct StatisticsView: View {
             }
             .onAppear {
                 animateBars = false
-                withAnimation(.easeOut(duration: 0.9)) { animateBars = true }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.8)) {
+                    animateBars = true
+                }
             }
         }
     }
+}
 
-    private func barColor(for status: GameStatus) -> Color {
-        switch status {
-        case .wishlist: .blue
-        case .playing: .orange
-        case .completed: .green
+private struct StatisticsSummaryGrid: View {
+    let gameCount: Int
+    let completedCount: Int
+    let totalHours: Int
+    let averageRating: Double
+
+    private let columns = [GridItem(.adaptive(minimum: 145), spacing: 12)]
+
+    var body: some View {
+        LazyVGrid(columns: columns, spacing: 12) {
+            StatisticCard(title: "遊戲總數", value: "\(gameCount)", icon: "gamecontroller.fill", tint: .indigo)
+            StatisticCard(title: "已通關", value: "\(completedCount)", icon: "checkmark.seal.fill", tint: .green)
+            StatisticCard(title: "遊玩時數", value: "\(totalHours) h", icon: "clock.fill", tint: .orange)
+            StatisticCard(
+                title: "平均評分",
+                value: averageRating.formatted(.number.precision(.fractionLength(1))) + " / 5",
+                icon: "star.fill",
+                tint: .yellow
+            )
         }
     }
+}
 
-    private func statCard(_ title: String, value: String, icon: String, tint: Color) -> some View {
+private struct StatisticCard: View {
+    let title: String
+    let value: String
+    let icon: String
+    let tint: Color
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Image(systemName: icon)
                 .font(.title2)
                 .foregroundStyle(tint)
+                .frame(width: 42, height: 42)
+                .background(tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             Text(value)
                 .font(.title2.bold())
                 .contentTransition(.numericText())
@@ -100,8 +109,86 @@ struct StatisticsView: View {
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
-        .frame(maxWidth: .infinity, minHeight: 100, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 132, alignment: .leading)
         .padding(16)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
+        .background(.background, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(.primary.opacity(0.06), lineWidth: 1)
+        }
+    }
+}
+
+private struct StatusDistributionCard: View {
+    let games: [Game]
+    let animateBars: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("遊玩狀態分布")
+                .font(.title2.bold())
+
+            ForEach(GameStatus.allCases) { status in
+                StatusProgressRow(
+                    status: status,
+                    count: games.filter { $0.status == status }.count,
+                    total: games.count,
+                    animate: animateBars
+                )
+            }
+        }
+        .padding(20)
+        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(.primary.opacity(0.06), lineWidth: 1)
+        }
+    }
+}
+
+private struct StatusProgressRow: View {
+    let status: GameStatus
+    let count: Int
+    let total: Int
+    let animate: Bool
+
+    private var color: Color {
+        switch status {
+        case .wishlist: .blue
+        case .playing: .orange
+        case .completed: .green
+        }
+    }
+
+    private var progress: CGFloat {
+        guard total > 0 else { return 0 }
+        return CGFloat(count) / CGFloat(total)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Label(status.rawValue, systemImage: status.systemImage)
+                    .foregroundStyle(color)
+                Spacer()
+                Text("\(count) / \(total)")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            .font(.subheadline.weight(.medium))
+
+            GeometryReader { geometry in
+                Capsule()
+                    .fill(Color.secondary.opacity(0.12))
+                    .overlay(alignment: .leading) {
+                        Capsule()
+                            .fill(color.gradient)
+                            .frame(width: animate ? geometry.size.width * progress : 0)
+                    }
+            }
+            .frame(height: 10)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityValue("\(count) 款，共 \(total) 款")
     }
 }

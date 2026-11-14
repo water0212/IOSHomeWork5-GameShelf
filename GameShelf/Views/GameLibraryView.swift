@@ -15,36 +15,13 @@ struct GameLibraryView: View {
         NavigationStack {
             GeometryReader { geometry in
                 if geometry.size.width >= 700 {
-                    ScrollView {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 290), spacing: 14)], spacing: 14) {
-                            ForEach($games) { $game in
-                                if isVisible(game) {
-                                    NavigationLink {
-                                        GameDetailView(game: $game)
-                                    } label: {
-                                        GameRowView(game: game)
-                                            .padding(12)
-                                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                        }
-                        .padding()
-                    }
+                    GameLibraryGrid(
+                        games: $games,
+                        compactHeight: geometry.size.height < 500,
+                        isVisible: isVisible
+                    )
                 } else {
-                    List {
-                        ForEach($games) { $game in
-                            if isVisible(game) {
-                                NavigationLink {
-                                    GameDetailView(game: $game)
-                                } label: {
-                                    GameRowView(game: game)
-                                }
-                            }
-                        }
-                    }
-                    .listStyle(.automatic)
+                    GameLibraryList(games: $games, isVisible: isVisible)
                 }
             }
             .navigationTitle("我的遊戲庫")
@@ -57,7 +34,9 @@ struct GameLibraryView: View {
                             Button(status.rawValue) { selectedStatus = status }
                         }
                     } label: {
-                        Label("篩選", systemImage: "line.3.horizontal.decrease.circle")
+                        Label(selectedStatus?.rawValue ?? "篩選", systemImage: selectedStatus == nil
+                              ? "line.3.horizontal.decrease.circle"
+                              : "line.3.horizontal.decrease.circle.fill")
                     }
                 }
             }
@@ -67,5 +46,64 @@ struct GameLibraryView: View {
                 }
             }
         }
+    }
+}
+
+private struct GameLibraryList: View {
+    @Binding var games: [Game]
+    let isVisible: (Game) -> Bool
+
+    var body: some View {
+        List {
+            Section {
+                ForEach($games) { $game in
+                    if isVisible(game) {
+                        NavigationLink {
+                            GameDetailView(game: $game)
+                        } label: {
+                            GameRowView(game: game)
+                        }
+                    }
+                }
+            } header: {
+                Text("共 \(games.filter(isVisible).count) 款遊戲")
+            }
+        }
+        .listStyle(.insetGrouped)
+        .safeAreaPadding(.bottom, 76)
+    }
+}
+
+private struct GameLibraryGrid: View {
+    @Binding var games: [Game]
+    let compactHeight: Bool
+    let isVisible: (Game) -> Bool
+
+    private let columns = [GridItem(.adaptive(minimum: 230, maximum: 300), spacing: 18)]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("共 \(games.filter(isVisible).count) 款遊戲")
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(.secondary)
+
+                LazyVGrid(columns: columns, spacing: 18) {
+                    ForEach($games) { $game in
+                        if isVisible(game) {
+                            NavigationLink {
+                                GameDetailView(game: $game)
+                            } label: {
+                                GameGridCardView(game: game, coverHeight: compactHeight ? 128 : 178)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .padding(24)
+        }
+        .background(Color(.systemGroupedBackground))
+        .safeAreaPadding(.bottom, 88)
     }
 }
